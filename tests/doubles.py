@@ -14,6 +14,15 @@ class FakeThreadedReactor(object):
 
 
 class FakeThreadPool(object):
+    def __init__(self, minthreads=5, maxthreads=20):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
     def callInThreadWithCallback(self, cb, f, *args, **kwargs):
         try:
             result = f(*args, **kwargs)

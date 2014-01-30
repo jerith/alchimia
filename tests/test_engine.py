@@ -9,8 +9,9 @@ from alchimia import TWISTED_STRATEGY
 from alchimia.engine import (
     TwistedEngine, TwistedConnection, TwistedTransaction,
 )
+from alchimia.threadpool import ThreadPoolPool
 
-from .doubles import FakeThreadedReactor
+from .doubles import FakeThreadedReactor, FakeThreadPool
 
 
 def create_engine():
@@ -30,6 +31,9 @@ class TestEngineCreation(object):
 
 
 class TestEngine(unittest.TestCase):
+    def setUp(self):
+        self.patch(ThreadPoolPool, 'threadPoolFactory', FakeThreadPool)
+
     def test_connect(self):
         engine = create_engine()
         d = engine.connect()
@@ -75,6 +79,9 @@ class TestEngine(unittest.TestCase):
 
 
 class TestConnection(unittest.TestCase):
+    def setUp(self):
+        self.patch(ThreadPoolPool, 'threadPoolFactory', FakeThreadPool)
+
     def get_connection(self):
         engine = create_engine()
         return self.successResultOf(engine.connect())
@@ -167,6 +174,9 @@ class TestConnection(unittest.TestCase):
 
 
 class TestResultProxy(unittest.TestCase):
+    def setUp(self):
+        self.patch(ThreadPoolPool, 'threadPoolFactory', FakeThreadPool)
+
     def create_default_table(self):
         engine = create_engine()
         d = engine.execute("CREATE TABLE testtable (id int)")
