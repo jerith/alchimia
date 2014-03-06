@@ -10,7 +10,6 @@ class TwistedEngine(object):
         if reactor is None:
             raise TypeError("Must provide a reactor")
 
-        super(TwistedEngine, self).__init__()
         self._engine = Engine(pool, dialect, url, **kwargs)
         self._reactor = reactor
         self._threadpoolpool = ThreadPoolPool()
@@ -73,7 +72,6 @@ class TwistedEngine(object):
 
 class TwistedConnection(object):
     def __init__(self, connection, engine, threadpool):
-        super(TwistedConnection, self).__init__()
         self._connection = connection
         self._engine = engine
         self._threadpool = threadpool
@@ -108,7 +106,6 @@ class TwistedConnection(object):
 
 class TwistedTransaction(object):
     def __init__(self, transaction, connection):
-        super(TwistedTransaction, self).__init__()
         self._transaction = transaction
         self._connection = connection
 
@@ -124,7 +121,6 @@ class TwistedTransaction(object):
 
 class TwistedResultProxy(object):
     def __init__(self, result_proxy, engine, threadpool):
-        super(TwistedResultProxy, self).__init__()
         self._result_proxy = result_proxy
         self._engine = engine
         self._threadpool = threadpool
