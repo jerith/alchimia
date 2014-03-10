@@ -1,8 +1,10 @@
 import sqlalchemy
 from sqlalchemy.engine import RowProxy
-from sqlalchemy.exc import StatementError
+from sqlalchemy.exc import ResourceClosedError
 from sqlalchemy.schema import CreateTable
 
+from twisted.internet.defer import gatherResults, inlineCallbacks
+from twisted.internet.task import deferLater
 from twisted.trial import unittest
 
 from alchimia import TWISTED_STRATEGY
@@ -10,12 +12,13 @@ from alchimia.engine import (
     TwistedEngine, TwistedConnection, TwistedTransaction,
 )
 
-from .doubles import FakeThreadedReactor
+from .doubles import FakeThreadedReactor, FakeThreadPool
 
 
 def create_engine():
     return sqlalchemy.create_engine(
-        "sqlite://", strategy=TWISTED_STRATEGY, reactor=FakeThreadedReactor()
+        "sqlite://", strategy=TWISTED_STRATEGY, reactor=FakeThreadedReactor(),
+        threadpool_class=FakeThreadPool
     )
 
 
@@ -99,7 +102,7 @@ class TestConnection(unittest.TestCase):
         self.successResultOf(conn.close())
         assert conn.closed
         failure = self.failureResultOf(
-            conn.execute("SELECT 42"), StatementError)
+            conn.execute("SELECT 42"), ResourceClosedError)
         assert "This Connection is closed" in str(failure)
 
     def test_in_transaction(self):
@@ -239,3 +242,26 @@ class TestResultProxy(unittest.TestCase):
         d = engine.execute("DELETE from testtable")
         result = self.successResultOf(d)
         assert result.rowcount == 3
+
+
+class TestConcurrentConnections(unittest.TestCase):
+    timeout = 1
+
+    def setUp(self):
+        from twisted.internet import reactor
+        self._reactor = reactor
+        # self._reactor.suggestThreadPoolSize(1)
+
+    def get_engine(self):
+        engine = sqlalchemy.create_engine(
+            "sqlite://", strategy=TWISTED_STRATEGY, reactor=self._reactor
+        )
+        self.addCleanup(engine.dispose)
+        return engine
+
+    @inlineCallbacks
+    def test_engine_execute(self):
+        engine = self.get_engine()
+        result = yield engine.execute("SELECT 42")
+        value = yield result.scalar()
+        assert value == 42

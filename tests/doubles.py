@@ -12,8 +12,22 @@ class FakeThreadedReactor(object):
     def callFromThread(self, f, *args, **kwargs):
         return f(*args, **kwargs)
 
+    def addSystemEventTrigger(self, phase, eventType, callable, *args, **kw):
+        pass
+
 
 class FakeThreadPool(object):
+    joined = False
+
+    def __init__(self, minthreads=5, maxthreads=20, name=None):
+        self.name = name
+
+    def start(self):
+        self.joined = False
+
+    def stop(self):
+        self.joined = True
+
     def callInThreadWithCallback(self, cb, f, *args, **kwargs):
         try:
             result = f(*args, **kwargs)
