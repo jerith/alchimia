@@ -1,7 +1,7 @@
 from sqlalchemy.engine.base import Engine
 
 from alchimia.threads import (
-    ConnectionThreadPoolManager, ManagedThreadConnectionPoolWrapper
+    ManagedThreadConnectionPoolWrapper, threadpool_manager_for_pool
 )
 
 
@@ -25,11 +25,11 @@ class TwistedEngine(object):
         if reactor is None:
             raise TypeError("Must provide a reactor")
 
-        pool = ManagedThreadConnectionPoolWrapper(pool)
-        self._engine = Engine(pool, dialect, url, **kwargs)
+        wrapped_pool = ManagedThreadConnectionPoolWrapper(pool)
+        self._engine = Engine(wrapped_pool, dialect, url, **kwargs)
         self._reactor = reactor
-        self._threadpool_manager = ConnectionThreadPoolManager(
-            reactor, threadpool_class)
+        self._threadpool_manager = threadpool_manager_for_pool(
+            pool, reactor, threadpool_class)
 
     def _defer_to_connection_thread(self, conn, f, *args, **kwargs):
         return self._threadpool_manager.defer_to_connection_thread(

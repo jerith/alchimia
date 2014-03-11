@@ -1,5 +1,6 @@
 import weakref
 
+from sqlalchemy.pool import SingletonThreadPool
 from twisted.internet.defer import fail
 from twisted.internet.threads import deferToThreadPool
 from twisted.python import context
@@ -59,7 +60,7 @@ class ConnectionThreadPoolManager(object):
     def _container_ref_callback(self, container_ref):
         tpool = self._container_refs.pop(container_ref, None)
         if tpool is not None:
-            self.kill_threadpool(tpool)
+            self._reactor.callFromThread(self.kill_threadpool, tpool)
 
     def defer_to_connection_thread(self, conn, f, *args, **kwargs):
         try:
@@ -86,6 +87,64 @@ class ConnectionThreadPoolManager(object):
         return d
 
 
+class SingletonConnectionThreadPoolManager(object):
+    def __init__(self, reactor, threadpool_class=None):
+        if threadpool_class is None:
+            threadpool_class = ThreadPool
+
+        self._reactor = reactor
+        self._threadpool_class = threadpool_class
+        self._threadpool = None
+        self._container_refs = {}
+        reactor.addSystemEventTrigger(
+            'before', 'shutdown', self.kill_all_threadpools)
+
+    def kill_threadpool(self, threadpool):
+        if threadpool is self._threadpool:
+            self._threadpool = None
+        threadpool.stop()
+
+    def kill_all_threadpools(self):
+        if self._threadpool is not None:
+            self.kill_threadpool(self._threadpool)
+
+    def new_threadpool(self):
+        if self._threadpool is None:
+            self._threadpool = self._threadpool_class(
+                minthreads=1, maxthreads=1)
+            self._threadpool.start()
+        return self._threadpool
+
+    def add_to_connection(self, threadpool, connection):
+        if '_alchimia_threadpool' in connection.info:
+            # Nothing to do here.
+            return
+        container = ConnectionThreadPoolContainer(threadpool)
+        connection.info['_alchimia_threadpool'] = container
+        container_ref = weakref.ref(container, self._container_ref_callback)
+        self._container_refs[container_ref] = threadpool
+
+    def _container_ref_callback(self, container_ref):
+        tpool = self._container_refs.pop(container_ref, None)
+        if tpool is not None:
+            self._reactor.callFromThread(self.kill_threadpool, tpool)
+
+    def defer_to_connection_thread(self, conn, f, *args, **kwargs):
+        try:
+            tpool = conn.info['_alchimia_threadpool'].threadpool
+        except Exception as e:
+            return fail(Failure(e))
+        return deferToThreadPool(self._reactor, tpool, f, *args, **kwargs)
+
+    def defer_to_new_connection_thread(self, f, *args, **kwargs):
+        tpool = self.new_threadpool()
+        add_to_connection = lambda conn: self.add_to_connection(tpool, conn)
+        ctx = {'_alchimia_connthread_func': add_to_connection}
+
+        return context.call(
+            ctx, deferToThreadPool, self._reactor, tpool, f, *args, **kwargs)
+
+
 class ManagedThreadConnectionPoolWrapper(object):
     def __init__(self, pool):
         self._pool = pool
@@ -110,3 +169,10 @@ class ManagedThreadConnectionPoolWrapper(object):
         connthread_func = context.get('_alchimia_connthread_func')
         connthread_func(conn)
         return conn
+
+
+def threadpool_manager_for_pool(pool, reactor, threadpool_class):
+    if isinstance(pool, SingletonThreadPool):
+        return SingletonConnectionThreadPoolManager(reactor, threadpool_class)
+    else:
+        return ConnectionThreadPoolManager(reactor, threadpool_class)

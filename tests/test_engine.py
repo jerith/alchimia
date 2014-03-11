@@ -1,3 +1,5 @@
+import threading
+
 import sqlalchemy
 from sqlalchemy.engine import RowProxy
 from sqlalchemy.exc import ResourceClosedError
@@ -250,18 +252,68 @@ class TestConcurrentConnections(unittest.TestCase):
     def setUp(self):
         from twisted.internet import reactor
         self._reactor = reactor
-        # self._reactor.suggestThreadPoolSize(1)
 
-    def get_engine(self):
+    def get_engine(self, filename=None):
+        connstr = "sqlite://"
+        if filename is not None:
+            import py.test
+            tmpdir = py.test.ensuretemp('test_dbs')
+            self.addCleanup(tmpdir.remove)
+            connstr += '/' + str(tmpdir.join(filename))
         engine = sqlalchemy.create_engine(
-            "sqlite://", strategy=TWISTED_STRATEGY, reactor=self._reactor
+            connstr, strategy=TWISTED_STRATEGY, reactor=self._reactor
         )
         self.addCleanup(engine.dispose)
         return engine
 
     @inlineCallbacks
-    def test_engine_execute(self):
+    def test_engine_execute_inmemory(self):
         engine = self.get_engine()
         result = yield engine.execute("SELECT 42")
         value = yield result.scalar()
         assert value == 42
+
+    @inlineCallbacks
+    def test_engine_execute_infile(self):
+        engine = self.get_engine('test.db')
+        result = yield engine.execute("SELECT 42")
+        value = yield result.scalar()
+        assert value == 42
+
+    def _get_thread_id_cb(self, conn, thread_id_set):
+        def get_thread_id(_sa_conn):
+            thread_id_set.add(id(threading.currentThread()))
+            return conn
+        return conn.run_callable(get_thread_id)
+
+    @inlineCallbacks
+    def test_concurrent_connections_inmemory(self):
+        engine = self.get_engine()
+        deferreds = []
+        thread_ids = set()
+
+        for _ in xrange(5):
+            d = engine.connect()
+            d.addCallback(self._get_thread_id_cb, thread_ids)
+            d.addCallback(lambda conn: conn.execute("SELECT 42"))
+            d.addCallback(lambda result: result.scalar())
+            deferreds.append(d)
+        results = yield gatherResults(deferreds)
+        assert results == [42] * 5
+        assert len(thread_ids) == 1
+
+    @inlineCallbacks
+    def test_concurrent_connections_infile(self):
+        engine = self.get_engine('test.db')
+        deferreds = []
+        thread_ids = set()
+
+        for _ in xrange(5):
+            d = engine.connect()
+            d.addCallback(self._get_thread_id_cb, thread_ids)
+            d.addCallback(lambda conn: conn.execute("SELECT 42"))
+            d.addCallback(lambda result: result.scalar())
+            deferreds.append(d)
+        results = yield gatherResults(deferreds)
+        assert results == [42] * 5
+        assert len(thread_ids) == 5
