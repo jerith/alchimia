@@ -1,6 +1,6 @@
 from sqlalchemy.engine.base import Engine
 
-from alchimia.threads import (
+from alchimia.pool import (
     ManagedThreadConnectionPoolWrapper, threadpool_manager_for_pool
 )
 
