@@ -44,6 +44,10 @@ class TwistedEngine(object):
         return self._engine.dialect
 
     @property
+    def dispatch(self):
+        return self._engine.dispatch
+
+    @property
     def _has_events(self):
         return self._engine._has_events
 
